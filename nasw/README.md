@@ -23,7 +23,6 @@ For pip-only servers:
 pip install -r requirements-server.txt
 ```
 
-<<<<<<< HEAD
 ## Packed Conda Environment
 
 To package the prepared conda environment for transfer to another server:
@@ -91,8 +90,6 @@ git commit -m "Sync workspace structure"
 git push origin main
 ```
 
-=======
->>>>>>> origin/main
 ## Dataset Preparation
 
 On the target server, this repository is expected to live in `~/workspace/nasw`,
@@ -112,8 +109,6 @@ This sample data is only for smoke testing. It must not be used to judge model
 accuracy. The sample generator creates enough subjects per class for stable
 train/validation/test smoke tests by default.
 
-<<<<<<< HEAD
-=======
 ## Closed-network / Offline validation
 
 Before the real dataset arrives and before the isolated GPU server is closed,
@@ -137,33 +132,150 @@ python -m pip install -r requirements-server.txt
 
 ```bash
 cd ~/workspace/nasw
-./12-build_conda_environment.sh create
-./12-build_conda_environment.sh pack
+conda install -c conda-forge conda-pack
+mkdir -p download
+conda run -n velora-cognitive-voice conda-pack \
+  -n velora-cognitive-voice \
+  -o download/velora-cognitive-voice.tar.gz \
+  --force
 ```
 
 This creates a packaged environment tarball under `~/workspace/nasw/download/velora-cognitive-voice.tar.gz`.
 
-3. Download offline package wheels for future closed-network installation (optional):
+3. Download offline package wheels for future pip-only installation (optional):
 
 ```bash
 cd ~/workspace/nasw
-python 12-validate_offline_environment.py --download-packages --package-cache offline_packages
+mkdir -p offline_packages
+python -m pip download -r requirements-server.txt -d offline_packages
 ```
 
-4. Run a smoke test using the built-in validation script:
+4. Run a smoke test using the sample dataset:
 
 ```bash
 cd ~/workspace/nasw
-python 12-validate_offline_environment.py --run-smoke-test
+python 11-create_sample_dataset.py --overwrite
+python 10-train_from_raw_dataset.py --overwrite --tasks ALL --weights none --epochs 1 --batch-size 4
 ```
 
-4. If this passes, copy the repository and the `offline_packages/` directory to
-the closed GPU server before the network is cut off.
+5. If this passes, copy the repository, `download/velora-cognitive-voice.tar.gz`,
+and optionally the `offline_packages/` directory to the closed GPU server before
+the network is cut off.
 
 If the real `dataset/` folder arrives later on the closed server, the same
 pipeline can be run there using the prepared environment and package cache.
 
->>>>>>> origin/main
+## Closed GPU Server Preflight Checklist
+
+Use this checklist before the AI Hub GPU server is isolated from the network.
+The goal is to confirm that training can run without downloading anything after
+the server becomes closed-network.
+
+1. Keep private data and generated artifacts out of GitHub:
+
+```text
+dataset/
+nasw/download/
+offline_packages/
+*.h5
+*.tar.gz
+```
+
+The real AI Hub audio, generated spectrograms, trained model files, packaged
+environments, and package caches should stay on the secured server or approved
+transfer media only.
+
+2. Prepare all offline dependencies before the network is closed:
+
+```bash
+cd ~/workspace/nasw
+conda env create -f environment.yml
+conda activate velora-cognitive-voice
+conda install -c conda-forge conda-pack
+mkdir -p download offline_packages
+conda run -n velora-cognitive-voice conda-pack \
+  -n velora-cognitive-voice \
+  -o download/velora-cognitive-voice.tar.gz \
+  --force
+python -m pip download -r requirements-server.txt -d offline_packages
+```
+
+3. Download the VGG16 ImageNet weights if training will use
+`--weights imagenet`:
+
+```bash
+python - <<'PY'
+from tensorflow.keras.applications import VGG16
+VGG16(weights="imagenet", include_top=False, input_shape=(100, 100, 3))
+print("VGG16 ImageNet weights downloaded.")
+PY
+```
+
+Copy this cached file to the closed server:
+
+```text
+~/.keras/models/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5
+```
+
+This file is not required for inference with an already trained `.h5` model.
+It is required only when training or fine-tuning starts from ImageNet weights.
+
+4. Verify TensorFlow GPU access before isolation:
+
+```bash
+nvidia-smi
+python -c "import tensorflow as tf; print(tf.__version__); print(tf.config.list_physical_devices('GPU'))"
+```
+
+The TensorFlow command should print at least one GPU device. If it prints `[]`,
+fix the Python/CUDA runtime environment before the server is closed.
+
+5. Run a one-epoch smoke test before isolation:
+
+```bash
+cd ~/workspace/nasw
+python 11-create_sample_dataset.py --overwrite
+python 10-train_from_raw_dataset.py --overwrite --tasks ALL --weights none --epochs 1 --batch-size 4
+```
+
+This confirms imports, audio processing, dataset preparation, model creation,
+and the training loop. It is not an accuracy test.
+
+6. Create checksums for transferred offline files:
+
+```bash
+cd ~/workspace/nasw
+sha256sum download/velora-cognitive-voice.tar.gz > SHA256SUMS.txt
+find offline_packages -type f -print0 | xargs -0 sha256sum >> SHA256SUMS.txt
+sha256sum ~/.keras/models/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5 >> SHA256SUMS.txt
+```
+
+After copying files to the closed server, run `sha256sum -c SHA256SUMS.txt`
+from the same relative layout to verify that the transfer is intact.
+
+7. Copy the minimum offline transfer bundle:
+
+```text
+workspace/nasw/
+workspace/nasw/download/velora-cognitive-voice.tar.gz
+workspace/nasw/offline_packages/
+~/.keras/models/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5
+workspace/dataset/
+SHA256SUMS.txt
+```
+
+8. Limit model export after closed-network training:
+
+```text
+normal_mci_ad_task-ALL_best.h5
+normal_mci_ad_task-ALL_metadata.json
+training CSV logs, if approved
+environment or package version records, if approved
+```
+
+Do not export raw audio, generated spectrogram images, `dataset/`, or logs that
+contain personal information unless the security policy explicitly allows it.
+
 ## Real Dataset Checklist
 
 Use this checklist after the real AI Hub dataset is installed and before the
@@ -181,8 +293,6 @@ Expected layout:
     download/
 ```
 
-<<<<<<< HEAD
-=======
 If the delivered dataset is nested differently, for example:
 
 ```text
@@ -225,7 +335,6 @@ python 07-prepare_normal_mci_ad_dataset.py \
   --no-recursive-audio-search
 ```
 
->>>>>>> origin/main
 Activate the training environment:
 
 ```bash
@@ -242,8 +351,6 @@ ffmpeg -version
 python -c "import librosa, soundfile, matplotlib, pandas, PIL; print('packages ok')"
 ```
 
-<<<<<<< HEAD
-=======
 If `nvidia-smi` sees the GPU but TensorFlow prints `[]` with
 `Cannot dlopen some GPU libraries` and `Skipping registering GPU devices`,
 install the TensorFlow CUDA extra inside the active environment:
@@ -253,7 +360,6 @@ python -m pip install --upgrade "tensorflow[and-cuda]==2.15.1"
 python -c "import tensorflow as tf; print(tf.__version__); print(tf.config.list_physical_devices('GPU'))"
 ```
 
->>>>>>> origin/main
 Check raw data folders and representative files:
 
 ```bash
