@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+.ssh/
+dataset/
+nasw/download/
+tmp/
