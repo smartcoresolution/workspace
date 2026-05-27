@@ -7,7 +7,7 @@ dependencies:
   - ffmpeg
   - libsndfile
   - pip:
-      - tensorflow==2.15.1
+      - tensorflow[and-cuda]==2.15.1
       - keras==2.15.0
       - numpy==1.26.4
       - h5py==3.16.0

@@ -166,6 +166,15 @@ ffmpeg -version
 python -c "import librosa, soundfile, matplotlib, pandas, PIL; print('packages ok')"
 ```
 
+If `nvidia-smi` sees the GPU but TensorFlow prints `[]` with
+`Cannot dlopen some GPU libraries` and `Skipping registering GPU devices`,
+install the TensorFlow CUDA extra inside the active environment:
+
+```bash
+python -m pip install --upgrade "tensorflow[and-cuda]==2.15.1"
+python -c "import tensorflow as tf; print(tf.__version__); print(tf.config.list_physical_devices('GPU'))"
+```
+
 Check raw data folders and representative files:
 
 ```bash
