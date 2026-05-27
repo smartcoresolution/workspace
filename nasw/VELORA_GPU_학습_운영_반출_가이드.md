@@ -62,6 +62,31 @@ python -c "import tensorflow as tf; print(tf.__version__); print(tf.config.list_
 [PhysicalDevice(name='/physical_device:GPU:0', device_type='GPU')]
 ```
 
+<<<<<<< HEAD
+=======
+`nvidia-smi`에는 GPU가 보이지만 TensorFlow 출력이 `[]`이고, 로그에 다음 메시지가 나오면
+드라이버 문제가 아니라 현재 Python 환경 안에 TensorFlow가 로드할 CUDA/cuDNN 런타임 라이브러리가
+없는 상태일 가능성이 높습니다.
+
+```text
+Cannot dlopen some GPU libraries
+Skipping registering GPU devices
+```
+
+이 프로젝트의 TensorFlow 2.15.1은 GPU용 pip extra를 함께 설치해야 합니다.
+
+```bash
+cd ~/workspace/nasw
+conda activate velora-cognitive-voice
+python -m pip install --upgrade "tensorflow[and-cuda]==2.15.1"
+python -c "import tensorflow as tf; print(tf.__version__); print(tf.config.list_physical_devices('GPU'))"
+```
+
+정상이라면 마지막 줄에 GPU 장치가 표시됩니다. `nvidia-smi`에 표시되는 `CUDA Version`은
+드라이버가 지원할 수 있는 최대 CUDA 계열을 의미하며, TensorFlow 환경 안에 CUDA/cuDNN
+라이브러리가 설치되어 있다는 뜻은 아닙니다.
+
+>>>>>>> origin/main
 오디오 처리 패키지 확인:
 
 ```bash

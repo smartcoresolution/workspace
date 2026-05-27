@@ -23,6 +23,7 @@ For pip-only servers:
 pip install -r requirements-server.txt
 ```
 
+<<<<<<< HEAD
 ## Packed Conda Environment
 
 To package the prepared conda environment for transfer to another server:
@@ -90,6 +91,8 @@ git commit -m "Sync workspace structure"
 git push origin main
 ```
 
+=======
+>>>>>>> origin/main
 ## Dataset Preparation
 
 On the target server, this repository is expected to live in `~/workspace/nasw`,
@@ -109,6 +112,58 @@ This sample data is only for smoke testing. It must not be used to judge model
 accuracy. The sample generator creates enough subjects per class for stable
 train/validation/test smoke tests by default.
 
+<<<<<<< HEAD
+=======
+## Closed-network / Offline validation
+
+Before the real dataset arrives and before the isolated GPU server is closed,
+validate the full pipeline locally using the sample dataset and the same
+environment.
+
+1. Create or update the local Python environment:
+
+```bash
+conda env create -f environment.yml
+conda activate velora-cognitive-voice
+```
+
+or using pip:
+
+```bash
+python -m pip install -r requirements-server.txt
+```
+
+2. Create and package the conda environment for offline transfer:
+
+```bash
+cd ~/workspace/nasw
+./12-build_conda_environment.sh create
+./12-build_conda_environment.sh pack
+```
+
+This creates a packaged environment tarball under `~/workspace/nasw/download/velora-cognitive-voice.tar.gz`.
+
+3. Download offline package wheels for future closed-network installation (optional):
+
+```bash
+cd ~/workspace/nasw
+python 12-validate_offline_environment.py --download-packages --package-cache offline_packages
+```
+
+4. Run a smoke test using the built-in validation script:
+
+```bash
+cd ~/workspace/nasw
+python 12-validate_offline_environment.py --run-smoke-test
+```
+
+4. If this passes, copy the repository and the `offline_packages/` directory to
+the closed GPU server before the network is cut off.
+
+If the real `dataset/` folder arrives later on the closed server, the same
+pipeline can be run there using the prepared environment and package cache.
+
+>>>>>>> origin/main
 ## Real Dataset Checklist
 
 Use this checklist after the real AI Hub dataset is installed and before the
@@ -126,6 +181,51 @@ Expected layout:
     download/
 ```
 
+<<<<<<< HEAD
+=======
+If the delivered dataset is nested differently, for example:
+
+```text
+~/workspace/dataset/some_export_folder/Training/...
+~/workspace/dataset/01.source/...
+~/workspace/dataset/02.label/...
+```
+
+the preparation script still scans recursively. It first looks for
+`IB-APPS`, `CERAD-K`, and `SNSB-II` folder names anywhere below the source
+root. If those names are not found, it falls back to scanning all JSON files
+below the source root. When JSON and audio are stored in separate folders, it
+also builds a filename index for `.flac`, `.wav`, `.mp3`, and `.m4a` files and
+tries to match the audio by filename.
+
+Use the broadest folder that contains both labels and audio:
+
+```bash
+python 07-prepare_normal_mci_ad_dataset.py \
+  --source-root ~/workspace/dataset \
+  --manifest-only
+```
+
+If the dataset was placed somewhere else:
+
+```bash
+python 07-prepare_normal_mci_ad_dataset.py \
+  --source-root /path/to/delivered_dataset_root \
+  --manifest-only
+```
+
+The output prints `source_roots_scanned` and `json_roots_scanned`; check these
+first when `read` or `written` is 0. To disable recursive audio filename
+matching for a very large dataset:
+
+```bash
+python 07-prepare_normal_mci_ad_dataset.py \
+  --source-root ~/workspace/dataset \
+  --manifest-only \
+  --no-recursive-audio-search
+```
+
+>>>>>>> origin/main
 Activate the training environment:
 
 ```bash
@@ -142,6 +242,18 @@ ffmpeg -version
 python -c "import librosa, soundfile, matplotlib, pandas, PIL; print('packages ok')"
 ```
 
+<<<<<<< HEAD
+=======
+If `nvidia-smi` sees the GPU but TensorFlow prints `[]` with
+`Cannot dlopen some GPU libraries` and `Skipping registering GPU devices`,
+install the TensorFlow CUDA extra inside the active environment:
+
+```bash
+python -m pip install --upgrade "tensorflow[and-cuda]==2.15.1"
+python -c "import tensorflow as tf; print(tf.__version__); print(tf.config.list_physical_devices('GPU'))"
+```
+
+>>>>>>> origin/main
 Check raw data folders and representative files:
 
 ```bash
