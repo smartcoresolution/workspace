@@ -1,0 +1,390 @@
+# VELORA Train
+
+Server-side training, verification, dataset preparation, and model inference utilities for the VELORA cognitive voice pipeline.
+
+## Contents
+
+- `07-prepare_normal_mci_ad_dataset.py`: build `Normal/MCI/AD` training datasets from the NIA source tree.
+- `08-train_normal_mci_ad_vgg16.py`: train the current VGG16-based 3-class model.
+- `09-infer_normal_mci_ad.py`: run local inference with a trained 3-class `.h5` model.
+- `10-train_from_raw_dataset.py`: one-command raw dataset preparation and model training for the server layout.
+- `11-create_sample_dataset.py`: create a tiny fake raw dataset for smoke tests before AI Hub data arrives.
+
+## Environment
+
+```bash
+conda env create -f environment.yml
+conda activate velora-cognitive-voice
+```
+
+For pip-only servers:
+
+```bash
+pip install -r requirements-server.txt
+```
+
+## Dataset Preparation
+
+On the target server, this repository is expected to live in `~/workspace/nasw`,
+with raw source data in `~/workspace/dataset` and generated outputs in
+`~/workspace/nasw/download`.
+
+Before the real AI Hub dataset is installed, create a small synthetic dataset
+to verify the environment and pipeline:
+
+```bash
+cd ~/workspace/nasw
+python 11-create_sample_dataset.py --overwrite
+python 10-train_from_raw_dataset.py --overwrite --tasks ALL --weights none --epochs 1 --batch-size 4
+```
+
+This sample data is only for smoke testing. It must not be used to judge model
+accuracy. The sample generator creates enough subjects per class for stable
+train/validation/test smoke tests by default.
+
+## Closed-network / Offline validation
+
+Before the real dataset arrives and before the isolated GPU server is closed,
+validate the full pipeline locally using the sample dataset and the same
+environment.
+
+1. Create or update the local Python environment:
+
+```bash
+conda env create -f environment.yml
+conda activate velora-cognitive-voice
+```
+
+or using pip:
+
+```bash
+python -m pip install -r requirements-server.txt
+```
+
+2. Create and package the conda environment for offline transfer:
+
+```bash
+cd ~/workspace/nasw
+./12-build_conda_environment.sh create
+./12-build_conda_environment.sh pack
+```
+
+This creates a packaged environment tarball under `~/workspace/nasw/download/velora-cognitive-voice.tar.gz`.
+
+3. Download offline package wheels for future closed-network installation (optional):
+
+```bash
+cd ~/workspace/nasw
+python 12-validate_offline_environment.py --download-packages --package-cache offline_packages
+```
+
+4. Run a smoke test using the built-in validation script:
+
+```bash
+cd ~/workspace/nasw
+python 12-validate_offline_environment.py --run-smoke-test
+```
+
+4. If this passes, copy the repository and the `offline_packages/` directory to
+the closed GPU server before the network is cut off.
+
+If the real `dataset/` folder arrives later on the closed server, the same
+pipeline can be run there using the prepared environment and package cache.
+
+## Real Dataset Checklist
+
+Use this checklist after the real AI Hub dataset is installed and before the
+network is closed.
+
+Expected layout:
+
+```text
+~/workspace/
+  dataset/
+    IB-APPS/
+    CERAD-K/
+    SNSB-II/
+  nasw/
+    download/
+```
+
+If the delivered dataset is nested differently, for example:
+
+```text
+~/workspace/dataset/some_export_folder/Training/...
+~/workspace/dataset/01.source/...
+~/workspace/dataset/02.label/...
+```
+
+the preparation script still scans recursively. It first looks for
+`IB-APPS`, `CERAD-K`, and `SNSB-II` folder names anywhere below the source
+root. If those names are not found, it falls back to scanning all JSON files
+below the source root. When JSON and audio are stored in separate folders, it
+also builds a filename index for `.flac`, `.wav`, `.mp3`, and `.m4a` files and
+tries to match the audio by filename.
+
+Use the broadest folder that contains both labels and audio:
+
+```bash
+python 07-prepare_normal_mci_ad_dataset.py \
+  --source-root ~/workspace/dataset \
+  --manifest-only
+```
+
+If the dataset was placed somewhere else:
+
+```bash
+python 07-prepare_normal_mci_ad_dataset.py \
+  --source-root /path/to/delivered_dataset_root \
+  --manifest-only
+```
+
+The output prints `source_roots_scanned` and `json_roots_scanned`; check these
+first when `read` or `written` is 0. To disable recursive audio filename
+matching for a very large dataset:
+
+```bash
+python 07-prepare_normal_mci_ad_dataset.py \
+  --source-root ~/workspace/dataset \
+  --manifest-only \
+  --no-recursive-audio-search
+```
+
+Activate the training environment:
+
+```bash
+cd ~/workspace/nasw
+conda activate velora-cognitive-voice
+```
+
+Check GPU and audio dependencies:
+
+```bash
+nvidia-smi
+python -c "import tensorflow as tf; print(tf.__version__); print(tf.config.list_physical_devices('GPU'))"
+ffmpeg -version
+python -c "import librosa, soundfile, matplotlib, pandas, PIL; print('packages ok')"
+```
+
+Check raw data folders and representative files:
+
+```bash
+ls -la ~/workspace/dataset
+find ~/workspace/dataset -maxdepth 2 -type d | head -40
+find ~/workspace/dataset -name '*_R.flac' | head
+find ~/workspace/dataset -name '*_R.json' | head
+```
+
+Run a metadata-only scan first. This does not create spectrogram images:
+
+```bash
+python 07-prepare_normal_mci_ad_dataset.py --manifest-only
+```
+
+Review the printed counts:
+
+```text
+read: should be greater than 0
+written: should be greater than 0
+skipped_unknown_label: should be checked if high
+skipped_missing_audio: should be checked if high
+json_errors: should be 0 or investigated
+```
+
+The manifest is written here:
+
+```text
+~/workspace/nasw/download/prepared_normal_mci_ad/dataset_manifest.csv
+```
+
+The preprocessing settings used for training data creation are written here:
+
+```text
+~/workspace/nasw/download/prepared_normal_mci_ad/preprocessing_config.json
+```
+
+This file records `sample_rate`, `seconds`, `dpi`, `audio_kind`, and split
+ratios. The training script stores this information in model metadata, and the
+inference script reuses it automatically.
+
+If the manifest counts look valid, create the Mel spectrogram training dataset:
+
+```bash
+python 07-prepare_normal_mci_ad_dataset.py --overwrite
+```
+
+Split ratio constraints:
+
+```text
+0 < train_ratio < 1
+0 <= val_ratio < 1
+train_ratio + val_ratio < 1
+```
+
+Check generated class folders:
+
+```bash
+find ~/workspace/nasw/download/prepared_normal_mci_ad/multiclass/ALL -maxdepth 2 -type d | sort
+```
+
+Expected folders:
+
+```text
+train/AD
+train/MCI
+train/Normal
+validation/AD
+validation/MCI
+validation/Normal
+test/AD
+test/MCI
+test/Normal
+```
+
+Train the model. Use `imagenet` while the network is still open:
+
+```bash
+python 10-train_from_raw_dataset.py --overwrite --tasks ALL --weights imagenet
+```
+
+If the network is closed or ImageNet weights are unavailable:
+
+```bash
+python 10-train_from_raw_dataset.py --overwrite --tasks ALL --weights none
+```
+
+Check training outputs:
+
+```bash
+ls -lh ~/workspace/nasw/download/ad_mci_normal/task-ALL/
+cat ~/workspace/nasw/download/ad_mci_normal/training_summary.json
+```
+
+Expected output files:
+
+```text
+normal_mci_ad_task-ALL_best.h5
+normal_mci_ad_task-ALL_final.h5
+normal_mci_ad_task-ALL_metadata.json
+normal_mci_ad_task-ALL_<timestamp>.csv
+```
+
+Run one inference smoke test:
+
+```bash
+AUDIO=$(find ~/workspace/dataset -name '*_R.flac' | head -1)
+python 09-infer_normal_mci_ad.py --audio-file "$AUDIO"
+```
+
+If this succeeds, the real-data training pipeline is ready.
+
+## Long Training And Resume
+
+For large raw datasets, split the workflow into preparation and training. This
+prevents repeated Mel spectrogram generation when you need to restart training.
+
+Prepare the image dataset once:
+
+```bash
+cd ~/workspace/nasw
+python 07-prepare_normal_mci_ad_dataset.py --overwrite
+```
+
+Start training:
+
+```bash
+python 08-train_normal_mci_ad_vgg16.py --tasks ALL --weights imagenet
+```
+
+The trainer continuously saves:
+
+```text
+download/ad_mci_normal/task-ALL/normal_mci_ad_task-ALL_best.h5
+download/ad_mci_normal/task-ALL/normal_mci_ad_task-ALL_final.h5
+```
+
+If training is interrupted, resume from the existing final checkpoint:
+
+```bash
+python 08-train_normal_mci_ad_vgg16.py --tasks ALL --resume --resume-from final
+```
+
+Resume from the best validation checkpoint instead:
+
+```bash
+python 08-train_normal_mci_ad_vgg16.py --tasks ALL --resume --resume-from best
+```
+
+You can also resume through the one-command wrapper without regenerating
+spectrograms:
+
+```bash
+python 10-train_from_raw_dataset.py --skip-prepare --tasks ALL --resume --resume-from final
+```
+
+To start from a specific exported model:
+
+```bash
+python 08-train_normal_mci_ad_vgg16.py \
+  --tasks ALL \
+  --initial-model ~/workspace/nasw/download/ad_mci_normal/task-ALL/normal_mci_ad_task-ALL_best.h5
+```
+
+One-command preparation and training:
+
+```bash
+cd ~/workspace/nasw
+python 10-train_from_raw_dataset.py --overwrite --tasks ALL
+```
+
+```bash
+cd ~/workspace/nasw
+python 07-prepare_normal_mci_ad_dataset.py --overwrite
+```
+
+By default, the script scans all three source groups: `IB-APPS`, `CERAD-K`, and `SNSB-II`.
+It uses `raw-file` / `_R.flac` audio by default.
+
+## Train Current Model
+
+```bash
+cd ~/workspace/nasw
+python 08-train_normal_mci_ad_vgg16.py --tasks ALL
+```
+
+If the server cannot download ImageNet weights:
+
+```bash
+python 08-train_normal_mci_ad_vgg16.py \
+  --tasks ALL \
+  --weights none
+```
+
+The default trained model output is:
+
+```text
+~/workspace/nasw/download/ad_mci_normal/task-ALL/
+```
+
+The prepared image dataset is:
+
+```text
+~/workspace/nasw/download/prepared_normal_mci_ad/
+```
+
+## Inference
+
+```bash
+cd ~/workspace/nasw
+python 09-infer_normal_mci_ad.py --audio-file ~/workspace/dataset/SNSB-II/<test_idx>/<test_idx>_R.flac
+```
+
+If `--model` is omitted, the script automatically finds the latest best model
+under `download/ad_mci_normal`.
+
+## Connect To Backend
+
+```bash
+export VELORA_COGNITIVE_MODEL_PATH=~/workspace/nasw/download/ad_mci_normal/task-ALL/normal_mci_ad_task-ALL_best.h5
+export VELORA_COGNITIVE_METADATA_PATH=~/workspace/nasw/download/ad_mci_normal/task-ALL/normal_mci_ad_task-ALL_metadata.json
+```
