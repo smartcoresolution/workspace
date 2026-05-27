@@ -6,13 +6,3 @@ nasw/.git.nasw-backup/
 *.h5
 *.pyc
 __pycache__/
-=======
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-*.swp
->>>>>>> origin/main
